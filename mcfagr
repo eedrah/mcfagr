@@ -1,0 +1,63 @@
+#! /usr/local/bin/bash
+# McFagr - Move Changes From Another Git Repository
+# Requirements - the repository is already added as a remote, and has been fetched
+
+POSITIONAL=()
+EXCLUDES=()
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        -r|--remote)
+            REMOTE="$2"
+            shift; shift
+            ;;
+        -e|--exclude)
+            EXCLUDES+=("$2")
+            shift; shift
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+        *)
+            POSITIONAL+=("$1") # save it in an array for later
+            shift # past argument
+            ;;
+    esac
+done
+set -- "${POSITIONAL[@]}" # restore positional parameters
+COMMITISH="$1"
+
+tmpFolder=$(mktemp -d)
+
+# Get the list of files that have been changed based on a range of commits that are important, and --exclude <file> criterion
+if [[ -z $EXCLUDES ]]; then
+    git diff $COMMITISH --numstat > "$tmpFolder"/filelist
+else
+    function addExcludes { printf "%s" "${@/#/:(exclude)}"; }
+    excludesCmd="'"$(addExcludes "${EXCLUDES[@]}")"'"
+    echo here
+    echo "$excludesCmd"
+    excludesCmd=$(echo "$excludesCmd")
+    git diff $COMMITISH --numstat -- . "$excludesCmd" > "$tmpFolder"/filelist
+fi
+#cat "$tmpFolder"/filelist
+echo git diff $COMMITISH --numstat -- . "$excludesCmd" \> "$tmpFolder"/filelist
+echo $BASH_VERSION
+echo $(git --version)
+echo "$excludesCmd"
+echo $EXCLUDES
+echo hihi
+
+# Calculate the closest commit for each file (based on a range?)
+
+# From the given initial change point (different range):
+# Actually, not needed - take the oldest commit that is in the 'closest' list
+# For each commit
+# Check if any files in the to-include list show this as the 'closest' commit
+# Do a separate diff and merge to these files, add and commit
+# Add these files to the included list
+# Create a patch for only the files that are in the included list
+# Apply patch
+# Resolve possible conflicts with --rerere
+# Loop
