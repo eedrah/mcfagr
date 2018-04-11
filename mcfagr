@@ -2,6 +2,9 @@
 # McFagr - Move Changes From Another Git Repository
 # Requirements - the repository is already added as a remote, and has been fetched
 
+# Example:
+#../mcfagr/mcfagr d-day..current --exclude content/plugins --exclude .gitignore --edit-file-list
+
 POSITIONAL=()
 EXCLUDES=()
 while [[ $# -gt 0 ]]; do
@@ -14,6 +17,10 @@ while [[ $# -gt 0 ]]; do
         -e|--exclude)
             EXCLUDES+=("$2")
             shift; shift
+            ;;
+        --edit-file-list)
+            EDIT_FILE_LIST=1
+            shift
             ;;
         -*)
             echo "Unknown option: $1"
@@ -29,25 +36,27 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 COMMITISH="$1"
 
 tmpFolder=$(mktemp -d)
+echo "Using temp folder at $tmpFolder"
+filelist="$tmpFolder/filelist"
 
 # Get the list of files that have been changed based on a range of commits that are important, and --exclude <file> criterion
 if [[ -z $EXCLUDES ]]; then
-    git diff $COMMITISH --numstat > "$tmpFolder"/filelist
+    git diff $COMMITISH --numstat > "$filelist"
 else
-    function addExcludes { printf "%s" "${@/#/:(exclude)}"; }
-    excludesCmd="'"$(addExcludes "${EXCLUDES[@]}")"'"
-    echo here
-    echo "$excludesCmd"
-    excludesCmd=$(echo "$excludesCmd")
-    git diff $COMMITISH --numstat -- . "$excludesCmd" > "$tmpFolder"/filelist
+    function addExcludes { printf "'%s' " "${@/#/:(exclude)}"; }
+    excludesCmd="$(addExcludes "${EXCLUDES[@]}")"
+    echo Using excludes of: "$excludesCmd"
+    bash -c "$(echo git diff $COMMITISH --numstat -- . "$excludesCmd" \> "$filelist")"
 fi
-#cat "$tmpFolder"/filelist
-echo git diff $COMMITISH --numstat -- . "$excludesCmd" \> "$tmpFolder"/filelist
-echo $BASH_VERSION
-echo $(git --version)
-echo "$excludesCmd"
-echo $EXCLUDES
-echo hihi
+
+# Manually edit the file list
+if [[ -n $EDIT_FILE_LIST ]]; then
+    [[ -n $VISUAL ]] && $VISUAL "$filelist"
+    read -n 1 -p "Pausing... Click any key to continue after editing $filelist" _
+fi
+
+# Trim the filelist to only the files
+cat "$filelist" | cut -f 3- > "$filelist"
 
 # Calculate the closest commit for each file (based on a range?)
 
