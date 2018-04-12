@@ -3,17 +3,21 @@
 # Requirements - the repository is already added as a remote, and has been fetched
 
 # Example:
+#d-day=1cc376
+#current=84cbbf7495a1be965e5cf27deb3f27d1bf415c58
+#HEAD=d676322fb00d40ca4bd2a749a0404a07e2388a41 (init)
 #../mcfagr/mcfagr d-day..current --exclude content/plugins --exclude .gitignore --edit-file-list
+#../mcfagr/mcfagr d-day..current --exclude content/plugins --exclude .gitignore --local-folder-prefix build/cms
 
 POSITIONAL=()
 EXCLUDES=()
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
-        -r|--remote)
-            REMOTE="$2"
-            shift; shift
-            ;;
+        #-r|--remote) # Maybe don't need this - as it's already added so git knows about the hashes/branches, without needing the name of the remote
+        #    REMOTE="$2"
+        #    shift; shift
+        #    ;;
         -e|--exclude)
             EXCLUDES+=("$2")
             shift; shift
@@ -21,6 +25,10 @@ while [[ $# -gt 0 ]]; do
         --edit-file-list)
             EDIT_FILE_LIST=1
             shift
+            ;;
+        --local-folder-prefix)
+            LOCAL_FOLDER_PREFIX="$2"
+            shift; shift
             ;;
         -*)
             echo "Unknown option: $1"
@@ -36,7 +44,6 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 COMMITISH="$1"
 
 tmpFolder=$(mktemp -d)
-echo "Using temp folder at $tmpFolder"
 filelist="$tmpFolder/filelist"
 
 # Get the list of files that have been changed based on a range of commits that are important, and --exclude <file> criterion
@@ -45,7 +52,6 @@ if [[ -z $EXCLUDES ]]; then
 else
     function addExcludes { printf "'%s' " "${@/#/:(exclude)}"; }
     excludesCmd="$(addExcludes "${EXCLUDES[@]}")"
-    echo Using excludes of: "$excludesCmd"
     bash -c "$(echo git diff $COMMITISH --numstat -- . "$excludesCmd" \> "$filelist")"
 fi
 
@@ -56,9 +62,31 @@ if [[ -n $EDIT_FILE_LIST ]]; then
 fi
 
 # Trim the filelist to only the files
-cat "$filelist" | cut -f 3- > "$filelist"
+cat "$filelist" | cut -f 3- > "$filelist-without-diff-numbers"
+mv "$filelist"{-without-diff-numbers,}
 
-# Calculate the closest commit for each file (based on a range?)
+# Calculate the closest commit for each file from the ancestory
+difflist="$tmpFolder/difflist"
+echo "$difflist"
+mostRecentCommit=$(git rev-list -1 $COMMITISH)
+while IFS='' read -r file || [[ -n "$file"  ]]; do
+    closestCommit=$mostRecentCommit
+    numberOfChangesInClosestCommit=99999999999999
+    for commit in $(git rev-list $mostRecentCommit); do
+        changes=$(git diff init${LOCAL_FOLDER_PREFIX/#/:} $commit --numstat --ignore-all-space -- "$file")
+        numberOfChanges=$(printf %s\\n "$changes" | awk '{print $1+$2}' )
+
+        if [ $numberOfChanges -lt $numberOfChangesInClosestCommit ]; then
+            numberOfChangesInClosestCommit=$numberOfChanges
+            closestCommit=$commit
+        fi
+    done
+    distance=$(git rev-list $closestCommit..$mostRecentCommit | wc -l)
+    printf 'commit: %s, distance: %s, number of changes: %s, file: %s\n' $closestCommit $distance $numberOfChangesInClosestCommit $file >> "$difflist"
+done < "$filelist"
+
+echo "$difflist"
+read -n 1 -p "End" _
 
 # From the given initial change point (different range):
 # Actually, not needed - take the oldest commit that is in the 'closest' list
